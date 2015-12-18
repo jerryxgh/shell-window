@@ -1,5 +1,5 @@
 # smartwin-mode
-A minor mode for emacs to show shell like buffers.
+A minor mode for emacs to show shell like buffers, when smartwin-mode is on, open a shell will use specific window to show it. The window is always at the bottom, and can shrink or enlarge automaticlly when move in or out it.
 
 To use smartwin, place this file to load path and add this to .emacs:
 
@@ -9,4 +9,4 @@ To use smartwin, place this file to load path and add this to .emacs:
 or run M-x smartwin-mode to toggle it.
 
 Then try run M-x shell or or eshell, if you want to show more buffers in smart
-window, please customize variable: smartwin-buffers.
+window, please customize variable `smartwin-buffers` or group `smartwin`.
