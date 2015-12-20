@@ -1,4 +1,4 @@
-;;; smartwin.el --- A minor mode for emacs to show shell like buffers. -*- lexical-binding:t -*-
+;;; smartwin.el --- A minor mode shows shell like buffers. -*- lexical-binding:t -*-
 
 ;; Copyright (C) 2015 GuanghuiXu
 
@@ -138,6 +138,19 @@ But smart window can be higher if run `delete-other-window' when is is already
 (defun smartwin--smart-window-p (window)
   "To judge whether WINDOW is smart window or not."
   (and window (windowp window) (window-parameter window 'smartwinp)))
+
+(defun smartwin--kill-buffer-when-shell-exit (&optional buffer)
+  "Kill the buffer on exit of interactive shell.
+if BUFFER is nil, use `current-buffer'."
+  (let* ((buf (or buffer (current-buffer)))
+         (process (get-buffer-process buf)))
+    (if process
+        (set-process-sentinel
+         process
+         #'(lambda (process state)
+             (when (or (string-match "exited abnormally with code." state)
+                       (string-match "\\(finished\\|exited\\)" state))
+               (quit-window t (get-buffer-window (process-buffer process)))))))))
 
 (defun smartwin--enlarge-window (window)
   "Try to enlarge smart WINDOW, but not too large."
@@ -551,6 +564,7 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
           (ad-activate 'select-window)
           (ad-activate 'kill-buffer)
           (ad-activate 'gdb)
+          (add-hook 'comint-mode-hook 'smartwin--kill-buffer-when-shell-exit)
           ;; (add-hook 'kill-emacs-hook 'smartwin-hide)
           (create-scratch-buffer)
 
@@ -566,6 +580,7 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
           (if (buffer-live-p smartwin-previous-buffer)
               (smartwin-show)))
 
+      (remove-hook 'comint-mode-hook 'smartwin--kill-buffer-when-shell-exit)
       ;; (remove-hook 'kill-emacs-hook 'smartwin-hide)
       (setq display-buffer-alist (delete pair display-buffer-alist))
       (ad-deactivate 'switch-to-buffer)
@@ -587,7 +602,6 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
       (ad-deactivate 'select-window)
       (ad-deactivate 'kill-buffer)
       (ad-deactivate 'gdb)
-      (define-key lisp-interaction-mode-map (kbd "C-x k") nil)
 
       (smartwin-hide))))
 
