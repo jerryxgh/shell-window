@@ -7,7 +7,7 @@
 ;; Created: 2015-4-28
 ;; Keywords: convenience
 ;; Version: 0.1
-;; Homepage: https://github.com/jerryxgh/smartwin
+;; URL: https://github.com/jerryxgh/smartwin
 ;; Package-Version: 0.1
 ;; Package-Requires: ((emacs "24"))
 ;;
