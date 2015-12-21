@@ -8,5 +8,8 @@ To use smartwin, place this file to load path and add this to .emacs:
 
 or run M-x smartwin-mode to toggle it.
 
+To switch between buffers of smart window, you can bind keys like:
+    (define-key smartwin-mode-map (kbd "C-c r") 'smartwin-switch-buffer)
+
 Then try run M-x shell or or eshell, if you want to show more buffers in smart
 window, please customize variable `smartwin-buffers` or group `smartwin`.

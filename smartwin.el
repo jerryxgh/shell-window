@@ -9,7 +9,7 @@
 ;; Version: 0.1
 ;; URL: https://github.com/jerryxgh/smartwin
 ;; Package-Version: 0.1
-;; Package-Requires: ((emacs "24"))
+;; Package-Requires: ((emacs "24.4"))
 ;;
 
 ;; This file is not part of GNU Emacs.
@@ -40,7 +40,6 @@
 ;;; Code:
 
 (require 'ido)
-(require 'subr-x)
 
 (defgroup smartwin nil
   "A minor mode for emacs to show shell like buffers"
@@ -536,9 +535,7 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
   :global t
   :group 'smartwin
   ;; The minor mode bindings.
-  :keymap (let ((map (make-sparse-keymap)))
-            (define-key map (kbd "C-c s") 'smartwin-switch-buffer)
-            map)
+  :keymap (make-sparse-keymap)
   (let ((pair '(smartwin--display-buffer-condition
                 smartwin--display-buffer-action)))
     (if smartwin-mode
@@ -657,7 +654,7 @@ This function get input by ido."
          (chosen (and smartwin-buffers
                       (ido-completing-read "Smartwin:" smartwin-buffers)))
          (buffer (and chosen
-                      (not (string-empty-p chosen))
+                      (not (string= chosen ""))
                       (get-buffer chosen))))
     (if (not buffer)
         (if (not smartwin-buffers)
