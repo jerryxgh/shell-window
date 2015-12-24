@@ -58,13 +58,10 @@
 (defvar smartwin-previous-buffer nil
   "If smart window is hidden, this variable store previous buffer shown in it.")
 
-(defvar smartwin-max-window-height (+ (/ (frame-height) 2) 2)
+(defvar smartwin-max-window-height (frame-height)
   "Maximum hight of smart window.
 But smart window can be higher if run `delete-other-window' when is is already
   to this height.")
-
-(defvar smartwin-min-window-height -1
-  "Minimal hight of smart window.")
 
 (defcustom smartwin-buffers
   '(;; Emacs
@@ -158,6 +155,11 @@ if BUFFER is nil, use `current-buffer'."
                        (string-match "\\(finished\\|exited\\)" state))
                (quit-window t (get-buffer-window (process-buffer process)))))))))
 
+(defun smartwin--min-window-height (window)
+  "Minimal hight of WINDOW."
+  (- (window-height window)
+     (window-min-delta window nil nil nil nil nil window-resize-pixelwise)))
+
 (defun smartwin--enlarge-window (window)
   "Try to enlarge smart WINDOW, but not too large."
   (let ((height-before (window-height window))
@@ -165,7 +167,7 @@ if BUFFER is nil, use `current-buffer'."
         (window-end (window-end)))
     (fit-window-to-buffer window
                           smartwin-max-window-height
-                          smartwin-min-window-height)
+                          (smartwin--min-window-height window))
     ;; set smart window start
     (if (> (window-height window) height-before)
         (let ((forward-line-num (- height-before (window-height window)))
@@ -205,7 +207,7 @@ If found, return the window, else return nil."
         (let ((bottom-window (car (last root-tree))))
           (if (and (windowp bottom-window)
                    (<= (window-height bottom-window)
-                       (+ smartwin-min-window-height 1)))
+                       (smartwin--min-window-height bottom-window)))
               bottom-window
             nil)))))
 
@@ -216,13 +218,7 @@ If found, return the window, else return nil."
     (if (frame-parameter nil 'unsplittable)
         nil
       (with-demoted-errors "Warning: %S"
-        (if (< smartwin-min-window-height 0)
-            (split-window root-win
-                          (- root-height
-                             smartwin-max-window-height) 'below)
-          (split-window root-win
-                        (- root-height
-                           smartwin-min-window-height) 'below))))))
+        (split-window root-win (- root-height window-min-height) 'below)))))
 
 (defun smartwin--get-or-create-smart-window ()
   "Get or create the smart window.
@@ -318,7 +314,8 @@ About ALL-FRAMES, DEDICATED and NOT-SELECTED, please see `get-mru-window'"
                              (eq (helm-window) smart-win))))
                   (if (eq window smart-win)
                       (smartwin--enlarge-window smart-win)
-                    (if (< smartwin-min-window-height (window-height smart-win))
+                    (if (> (window-height smart-win)
+                           (smartwin--min-window-height smart-win))
                         (minimize-window smart-win)))))))))
 
 (defadvice balance-windows (around smartwin-around-balance-windows)
@@ -557,7 +554,6 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
           (ad-activate 'evil-window-move-far-right)
           (ad-activate 'evil-window-move-very-bottom)
           (ad-activate 'split-window)
-
           (ad-activate 'display-buffer-pop-up-window)
           (ad-activate 'window-splittable-p)
           (ad-activate 'get-largest-window)
@@ -573,15 +569,6 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
           (add-hook 'comint-mode-hook 'smartwin--kill-buffer-when-shell-exit)
           (add-hook 'kill-emacs-hook 'smartwin-hide)
           (smartwin-create-scratch-buffer)
-
-          ;; detect appropriate minimal height of smart window
-          (when (< smartwin-min-window-height 0)
-            (smartwin-show)
-            (let ((window (smartwin--get-smart-window)))
-              (minimize-window window)
-              (setq smartwin-min-window-height (window-height window)))
-            (smartwin-hide)
-            (setq smartwin-previous-buffer nil))
 
           (if (buffer-live-p smartwin-previous-buffer)
               (smartwin-show)))
@@ -700,10 +687,16 @@ According to `major-mode' that yasnippet is not enabled and the
   (interactive)
   (cond ((eq major-mode 'eshell-mode)
          (let ((eshell-buffer-maximum-lines 0))
-           (eshell-truncate-buffer)))
+           (eshell-truncate-buffer)
+           (fit-window-to-buffer (selected-window)
+                          smartwin-max-window-height
+                          (smartwin--min-window-height (selected-window)))))
         ((derived-mode-p 'comint-mode)
          (let ((comint-buffer-maximum-size 0))
-           (comint-truncate-buffer)))
+           (comint-truncate-buffer)
+           (fit-window-to-buffer (selected-window)
+                          smartwin-max-window-height
+                          (smartwin--min-window-height (selected-window)))))
         (t (command-execute (smartwin--get-C-l-command)))))
 
 (defun smartwin-clear-scratch-buffer (&optional buffer-or-name)
