@@ -1,8 +1,10 @@
 ;;; smartwin.el --- A minor mode shows shell like buffers. -*- lexical-binding:t -*-
 
 ;; Copyright (C) 2015 GuanghuiXu
+;; Copyright (C) 2011-2015 Tomohiro Matsuyama
 
 ;; Author: GuanghuiXu gh_xu@qq.com
+;;         Tomohiro Matsuyama <m2ym.pub@gmail.com>
 ;; Maintainer: GuanghuiXu gh_xu@qq.com
 ;; Created: 2015-4-28
 ;; Keywords: convenience
@@ -44,6 +46,7 @@
 ;;; Code:
 
 (require 'ido)
+(require 'esh-mode)
 
 (defgroup smartwin nil
   "A minor mode for emacs to show shell like buffers"
@@ -160,10 +163,9 @@ if BUFFER is nil, use `current-buffer'."
   (let ((height-before (window-height window))
         (window-start (window-start))
         (window-end (window-end)))
-    (if (not (string-prefix-p "*helm" (buffer-name)))
-        (fit-window-to-buffer window
-                              smartwin-max-window-height
-                              smartwin-min-window-height))
+    (fit-window-to-buffer window
+                          smartwin-max-window-height
+                          smartwin-min-window-height)
     ;; set smart window start
     (if (> (window-height window) height-before)
         (let ((forward-line-num (- height-before (window-height window)))
@@ -233,7 +235,7 @@ If succeed, a smart window is returned, else return nil."
       (when window
         (set-window-parameter window 'smartwinp t)
         (set-window-buffer window (or (get-buffer "*scratch*")
-                                      (create-scratch-buffer)))
+                                      (smartwin-create-scratch-buffer)))
         (set-window-prev-buffers window nil))
       window)))
 
@@ -303,14 +305,17 @@ About ALL-FRAMES, DEDICATED and NOT-SELECTED, please see `get-mru-window'"
     ad-do-it))
 
 (defadvice select-window (after smartwin-after-select-window)
-  "Enlarge or shringe smart window when select window."
+  "Enlarge or shrink smart window when select window."
   (if (and (not (boundp 'in-smartwin-select-window))
            (not (boundp 'in-smartwin-scroll)))
       (let ((in-smartwin-select-window t)
             (window (ad-get-arg 0)))
         (if window
             (let ((smart-win (smartwin--get-smart-window)))
-              (if smart-win
+              (if (and smart-win
+                       (not
+                        (and (fboundp 'helm-window)
+                             (eq (helm-window) smart-win))))
                   (if (eq window smart-win)
                       (smartwin--enlarge-window smart-win)
                     (if (< smartwin-min-window-height (window-height smart-win))
@@ -495,7 +500,7 @@ split smart window."
         (buffer-to-kill (or (and (ad-get-arg 0) (get-buffer (ad-get-arg 0)))
                             (current-buffer))))
     (if (eq buffer-to-kill scratch-buffer) ;; not kill scratch buffer, clear it
-        (clear-scratch-buffer buffer-to-kill)
+        (smartwin-clear-scratch-buffer buffer-to-kill)
       ad-do-it ;; kill buffer
       (if (eq smart-win window)
           ;; auto hide smart window if "*scratch*" is the last smart buffer and
@@ -560,14 +565,14 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
           (ad-activate 'get-mru-window)
           (ad-activate 'delete-window)
           (ad-activate 'delete-other-windows)
-          ;; (ad-activate 'balance-windows)
+          (ad-activate 'balance-windows)
           (ad-activate 'mwheel-scroll)
           (ad-activate 'select-window)
           (ad-activate 'kill-buffer)
           (ad-activate 'gdb)
           (add-hook 'comint-mode-hook 'smartwin--kill-buffer-when-shell-exit)
-          ;; (add-hook 'kill-emacs-hook 'smartwin-hide)
-          (create-scratch-buffer)
+          (add-hook 'kill-emacs-hook 'smartwin-hide)
+          (smartwin-create-scratch-buffer)
 
           ;; detect appropriate minimal height of smart window
           (when (< smartwin-min-window-height 0)
@@ -582,7 +587,7 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
               (smartwin-show)))
 
       (remove-hook 'comint-mode-hook 'smartwin--kill-buffer-when-shell-exit)
-      ;; (remove-hook 'kill-emacs-hook 'smartwin-hide)
+      (remove-hook 'kill-emacs-hook 'smartwin-hide)
       (setq display-buffer-alist (delete pair display-buffer-alist))
       (ad-deactivate 'switch-to-buffer)
       (ad-deactivate 'switch-to-buffer-other-window)
@@ -669,7 +674,7 @@ This function get input by ido."
           (message (format "Buffer %s not exist" chosen)))
       (switch-to-buffer buffer))))
 
-(defun create-scratch-buffer ()
+(defun smartwin-create-scratch-buffer ()
   "Create a scratch buffer with the scratch message."
   (interactive)
   (unless (get-buffer "*scratch*")
@@ -680,7 +685,28 @@ This function get input by ido."
         (lisp-interaction-mode)
         (current-buffer)))))
 
-(defun clear-scratch-buffer (&optional buffer-or-name)
+(defun smartwin--get-C-l-command ()
+  "Get the command <tab> should be bound.
+According to `major-mode' that yasnippet is not enabled and the
+`global-map'."
+  (let ((major-mode-map
+         (symbol-value (intern-soft (concat (symbol-name major-mode) "-map")))))
+    (or (and major-mode-map
+             (lookup-key major-mode-map (kbd "C-l")))
+        (lookup-key global-map (kbd "C-l")))))
+
+(defun smartwin-clear-shell ()
+  "Clear `eshell' or submode of `comint-mode' buffer."
+  (interactive)
+  (cond ((eq major-mode 'eshell-mode)
+         (let ((eshell-buffer-maximum-lines 0))
+           (eshell-truncate-buffer)))
+        ((derived-mode-p 'comint-mode)
+         (let ((comint-buffer-maximum-size 0))
+           (comint-truncate-buffer)))
+        (t (command-execute (smartwin--get-C-l-command)))))
+
+(defun smartwin-clear-scratch-buffer (&optional buffer-or-name)
   "Clear the scratch buffer and keep the scratch message.
 If BUFFER-OR-NAME is not nil, treat is as scratch buffer."
   (interactive)
@@ -691,7 +717,6 @@ If BUFFER-OR-NAME is not nil, treat is as scratch buffer."
       (delete-region (point-min) (point-max))
       (insert initial-scratch-message)
       (goto-char (point-max)))))
-
 
 (provide 'smartwin)
 
