@@ -46,6 +46,7 @@ on `popwin`, thanks to all authors of them, and author of `popwin` is included
 in the author.
 
 Copyright (C) 2015 GuanghuiXu
+
 Copyright (C) 2011-2015 Tomohiro Matsuyama
 
 Distributed under GNU GPL, version 2.

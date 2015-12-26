@@ -58,7 +58,7 @@
 (defvar smartwin-previous-buffer nil
   "If smart window is hidden, this variable store previous buffer shown in it.")
 
-(defvar smartwin-max-window-height (frame-height)
+(defvar smartwin-max-window-height (+ 2 (/ (frame-height) 2))
   "Maximum hight of smart window.
 But smart window can be higher if run `delete-other-window' when is is already
   to this height.")
