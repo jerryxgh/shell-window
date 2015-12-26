@@ -520,12 +520,12 @@ split smart window."
 
 (defun smartwin--display-buffer-condition (buffer-or-name _action)
   "Part of pair in `display-buffer-alist'.
-BUFFER-OR-NAME is a buffer name, ACTION is an argument of `display-buffer'."
-  (and (smartwin--match-buffer buffer-or-name) t))
+BUFFER-OR-NAME is a buffer name to match, _ACTION is not used."
+  (smartwin--match-buffer buffer-or-name))
 
 (defun smartwin--display-buffer-action (buffer-or-name _alist)
   "Part of pair in `display-buffer-alist'.
-BUFFER-OR-NAME is a buffer to display, ALIST is them same form as ALIST."
+BUFFER-OR-NAME is a buffer to display, _ALIST is not used."
   (let ((buffer (window-normalize-buffer-to-switch-to buffer-or-name))
         (smart-win (smartwin--get-or-create-smart-window)))
     (with-selected-window smart-win
