@@ -518,12 +518,12 @@ split smart window."
 
 ;;; Minor Mode
 
-(defun smartwin--display-buffer-condition (buffer-or-name action)
+(defun smartwin--display-buffer-condition (buffer-or-name _action)
   "Part of pair in `display-buffer-alist'.
 BUFFER-OR-NAME is a buffer name, ACTION is an argument of `display-buffer'."
   (and (smartwin--match-buffer buffer-or-name) t))
 
-(defun smartwin--display-buffer-action (buffer-or-name alist)
+(defun smartwin--display-buffer-action (buffer-or-name _alist)
   "Part of pair in `display-buffer-alist'.
 BUFFER-OR-NAME is a buffer to display, ALIST is them same form as ALIST."
   (let ((buffer (window-normalize-buffer-to-switch-to buffer-or-name))
