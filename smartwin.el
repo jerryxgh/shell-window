@@ -51,7 +51,7 @@
 (defgroup smartwin nil
   "A minor mode for emacs to show shell like buffers"
   :prefix "smartwin-"
-  :version "0.1.alpha"
+  :version "0.1"
   :group 'convenience
   :group 'windows)
 
