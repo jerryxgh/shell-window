@@ -158,10 +158,15 @@ if BUFFER is nil, use `current-buffer'."
 (defun smartwin--min-window-height (window)
   "Minimal hight of WINDOW."
   (- (window-height window)
-     (window-min-delta window nil nil nil nil nil window-resize-pixelwise)))
+     (window-min-delta window nil nil nil nil nil)))
+
+(defun smartwin--shrink-window (window)
+  "Try to shirnk smart WINDOW."
+  (if (> (window-height window) (smartwin--min-window-height window))
+      (minimize-window window)))
 
 (defun smartwin--enlarge-window (window)
-  "Try to enlarge smart WINDOW, but not too large."
+  "Try to enlarge smart WINDOW."
   (let ((height-before (window-height window))
         (window-start (window-start))
         (window-end (window-end)))
@@ -192,12 +197,9 @@ if BUFFER is nil, use `current-buffer'."
 (defun smartwin--get-smart-window ()
   "Find smart window among all live windows.
 If found, return the window, else return nil."
-  (let ((root-tree (car (window-tree (selected-frame)))))
-    (if (and (listp root-tree) (car root-tree))
-        (let ((bottom-window (car (last root-tree))))
-          (if (smartwin--smart-window-p bottom-window)
-              bottom-window
-            nil))
+  (let ((bottom-window (window-last-child (frame-root-window))))
+    (if (smartwin--smart-window-p bottom-window)
+        bottom-window
       nil)))
 
 (defun smartwin--get-befitting-window ()
@@ -235,7 +237,6 @@ If succeed, a smart window is returned, else return nil."
         (set-window-prev-buffers window nil))
       window)))
 
-;; switch-to-buffer-other-window
 (defun smartwin--get-largest-window (&optional all-frames dedicated not-selected)
   "Like `get-largest-window', but smart window is excluded.
 About ALL-FRAMES, DEDICATED and NOT-SELECTED, please see `get-largest-window'"
@@ -314,22 +315,19 @@ About ALL-FRAMES, DEDICATED and NOT-SELECTED, please see `get-mru-window'"
                              (eq (helm-window) smart-win))))
                   (if (eq window smart-win)
                       (smartwin--enlarge-window smart-win)
-                    (if (> (window-height smart-win)
-                           (smartwin--min-window-height smart-win))
-                        (minimize-window smart-win)))))))))
+                    (smartwin--shrink-window smart-win))))))))
 
 (defadvice balance-windows (around smartwin-around-balance-windows)
   "When do `balance-windows', ignore smart window."
-  (let* ((window (smartwin--get-smart-window))
-         (in-smartwin (eq (selected-window) window)))
-    (if window
-        (if (not in-smartwin)
-            (progn
-              (smartwin-hide)
-              ad-do-it
-              (smartwin-show)
-              ))
-      ad-do-it)))
+  (let ((smart-window (smartwin--get-smart-window))
+        (window-or-frame (ad-get-arg 0)))
+    (if (and smart-window
+             (or (not (windowp window-or-frame))
+                 ;; the only two ancestor windows of smart window
+                 (eq window-or-frame (frame-root-window))
+                 (eq window-or-frame (window-parent smart-window))))
+        (ad-set-arg 0 (window-prev-sibling smart-window)))
+    ad-do-it))
 
 (defadvice evil-window-move-far-left
     (around smartwin-around-evil-window-move-far-left)
@@ -395,15 +393,14 @@ About ALL-FRAMES, DEDICATED and NOT-SELECTED, please see `get-mru-window'"
 (defadvice delete-window (around smartwin-around-delete-window)
   "If the window is last oridnary window(not smart window), do not kill it."
   (let ((window (ad-get-arg 0)))
-    (if (not window)
-        (setq window (selected-window)))
+    (if (not window) (setq window (selected-window)))
     (if (smartwin--smart-window-p window)
         (progn
           (setq smartwin-previous-buffer (window-buffer window))
           ad-do-it)
       (if (and (smartwin--get-smart-window) (eq 2 (length (window-list))))
           (progn
-            (message "Attempt to delete last normal(non smart window) window")
+            (message "Attempt to delete last normal(non smart) window")
             (setq ad-return-value nil))
         ad-do-it))))
 
@@ -601,13 +598,17 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
 (defun smartwin-show ()
   "Show smart window."
   (interactive)
-  (if (and smartwin-mode
-           (not (smartwin--get-smart-window)))
-      (let ((window (smartwin--get-or-create-smart-window)))
-        (if (and smartwin-previous-buffer
-                 (buffer-live-p smartwin-previous-buffer))
-            (if (not (eq smartwin-previous-buffer (window-buffer window)))
-                (set-window-buffer window smartwin-previous-buffer))))))
+  (if smartwin-mode
+      (let ((window (smartwin--get-smart-window)))
+        (when (not window)
+          (setq window (smartwin--get-or-create-smart-window))
+          (if (and smartwin-previous-buffer
+                   (buffer-live-p smartwin-previous-buffer))
+              (if (not (eq smartwin-previous-buffer (window-buffer window)))
+                  (set-window-buffer window smartwin-previous-buffer))))
+        (if (called-interactively-p 'interactive)
+            (select-window window)))
+    (message "Smartwin-mode is not enabled, do nothing")))
 
 (defun smartwin-hide ()
   "Hide smart window, store its buffer as previous buffer."
@@ -689,14 +690,14 @@ According to `major-mode' that yasnippet is not enabled and the
          (let ((eshell-buffer-maximum-lines 0))
            (eshell-truncate-buffer)
            (fit-window-to-buffer (selected-window)
-                          smartwin-max-window-height
-                          (smartwin--min-window-height (selected-window)))))
+                                 smartwin-max-window-height
+                                 (smartwin--min-window-height (selected-window)))))
         ((derived-mode-p 'comint-mode)
          (let ((comint-buffer-maximum-size 0))
            (comint-truncate-buffer)
            (fit-window-to-buffer (selected-window)
-                          smartwin-max-window-height
-                          (smartwin--min-window-height (selected-window)))))
+                                 smartwin-max-window-height
+                                 (smartwin--min-window-height (selected-window)))))
         (t (command-execute (smartwin--get-C-l-command)))))
 
 (defun smartwin-clear-scratch-buffer (&optional buffer-or-name)
