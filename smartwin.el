@@ -55,6 +55,9 @@
   :group 'convenience
   :group 'windows)
 
+(defvar smartwin-scroll-conservatively-backup scroll-conservatively
+  "Backup of `scroll-conservatively' to restore it when quit smartwin-mode.")
+
 (defvar smartwin-previous-buffer nil
   "If smart window is hidden, this variable store previous buffer shown in it.")
 
@@ -495,16 +498,14 @@ split smart window."
                             (current-buffer))))
     (if (eq buffer-to-kill scratch-buffer) ;; not kill scratch buffer, clear it
         (smartwin-clear-scratch-buffer buffer-to-kill)
-      ad-do-it ;; kill buffer
+      ad-do-it ;; do kill buffer
       (if (eq smart-win window)
           ;; auto hide smart window if "*scratch*" is the last smart buffer and
           ;; not been modified
           (progn
-            (let ((buffer-list (smartwin--make-smart-buffer-list)))
-              (if (and (eq scratch-buffer (window-buffer smart-win))
-                       (not buffer-list)
-                       (not (buffer-modified-p scratch-buffer)))
-                  (smartwin-hide))))
+            (if (and (eq scratch-buffer (window-buffer smart-win))
+                     (not (buffer-modified-p scratch-buffer)))
+                (smartwin-hide)))
         ;; to insure smart buffer not shown in normal window
         (let ((buffer (window-buffer window)))
           (if (smartwin--match-buffer buffer)
@@ -543,6 +544,9 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
                 smartwin--display-buffer-action)))
     (if smartwin-mode
         (progn
+          ;; backup scroll-conservatively to restore it when quit smartwin-mode
+          (setq smartwin-scroll-conservatively-backup scroll-conservatively)
+          (setq scroll-conservatively (- most-positive-fixnum 1))
           (push pair display-buffer-alist)
           (ad-activate 'switch-to-buffer)
           (ad-activate 'switch-to-buffer-other-window)
@@ -570,6 +574,9 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
           (if (buffer-live-p smartwin-previous-buffer)
               (smartwin-show)))
 
+      ;; restore scroll-conservatively when it equal to smartwin's setting
+      (if (eq scroll-conservatively (- most-positive-fixnum 1))
+          (setq scroll-conservatively smartwin-scroll-conservatively-backup))
       (remove-hook 'comint-mode-hook 'smartwin--kill-buffer-when-shell-exit)
       (remove-hook 'kill-emacs-hook 'smartwin-hide)
       (setq display-buffer-alist (delete pair display-buffer-alist))
@@ -707,10 +714,12 @@ If BUFFER-OR-NAME is not nil, treat is as scratch buffer."
   (let ((buffer (if (not buffer-or-name)
                     (get-buffer "*scratch*")
                   (get-buffer buffer-or-name))))
-    (when (eq buffer (current-buffer))
-      (delete-region (point-min) (point-max))
-      (insert initial-scratch-message)
-      (goto-char (point-max)))))
+    (if initial-scratch-message
+        (with-current-buffer buffer
+          (delete-region (point-min) (point-max))
+          (insert initial-scratch-message)
+          (set-buffer-modified-p nil)
+          (goto-char (point-max))))))
 
 (provide 'smartwin)
 
