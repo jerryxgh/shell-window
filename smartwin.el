@@ -21,7 +21,7 @@
 ;; Smartwin is a window for shell buffers, temp buffers and etc.
 
 ;; This minor mode let shell like buffers share a window, called smart window,
-;; the smart window is always at the bottom of emacs window. Besides that, when
+;; the smart window is always at the bottom of Emacs window.  Besides that, when
 ;; point move into or out the smart window, it will be enlarged or shrinked
 ;; automaticly.
 ;;
@@ -42,6 +42,9 @@
 
 ;;; TODO:
 ;; 1. Use new addvice functions to do advice.
+
+;;; BUGS:
+;; 1. can not work with guide-key
 
 ;;; Code:
 
@@ -439,6 +442,18 @@ About ALL-FRAMES, DEDICATED and NOT-SELECTED, please see `get-mru-window'"
                (setq ad-return-value window))
       ad-do-it)))
 
+(declare-function 'popwin:create-popup-window "popwin")
+(defadvice popwin:create-popup-window (around
+                                       smartwin-popwin:create-popup-window)
+  "Work with `popwin'."
+  (if (smartwin--get-smart-window)
+      (progn
+        (message "asdfa;sldfja;lskdfa;lskdf")
+        (smartwin-hide)
+        ad-do-it
+        (smartwin-show))
+    ad-do-it))
+
 (defadvice window-splittable-p (around smartwin-around-window-splittable-p)
   "Return nil when parameter of `window-splittable-p' is smart window.
 This advice will affect `split-window-sensibly' to make it not
@@ -566,6 +581,7 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
           (ad-activate 'mwheel-scroll)
           (ad-activate 'select-window)
           (ad-activate 'kill-buffer)
+          (ad-activate 'popwin:create-popup-window)
           (ad-activate 'gdb)
           (add-hook 'comint-mode-hook 'smartwin--kill-buffer-when-shell-exit)
           (add-hook 'kill-emacs-hook 'smartwin-hide)
@@ -598,6 +614,7 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
       (ad-deactivate 'mwheel-scroll)
       (ad-deactivate 'select-window)
       (ad-deactivate 'kill-buffer)
+      (ad-deactivate 'popwin:create-popup-window)
       (ad-deactivate 'gdb)
 
       (smartwin-hide))))
