@@ -64,9 +64,6 @@
   :group 'convenience
   :group 'windows)
 
-(defvar smartwin-scroll-conservatively-backup scroll-conservatively
-  "Backup of `scroll-conservatively' to restore it when quit smartwin-mode.")
-
 (defvar smartwin-previous-buffer nil
   "If smart window is hidden, this variable store previous buffer shown in it.")
 
@@ -177,8 +174,11 @@ if BUFFER is nil, use `current-buffer'."
 If FORCE is not nil, do shrink even `smartwin-window-status' is 1."
   (when (or force (not (eq 1 smartwin-window-status)))
     (setq smartwin-window-status 1)
-    (if (> (window-height window) (smartwin--min-window-height window))
-        (minimize-window window))))
+    (with-current-buffer (window-buffer window)
+      (setq window-size-fixed nil)
+      (if (> (window-height window) (smartwin--min-window-height window))
+        (minimize-window window))
+      (setq window-size-fixed t))))
 
 (defun smartwin--enlarge-window (window &optional force)
   "Try to enlarge smart WINDOW if `smartwin-window-status' is not 2.
@@ -188,10 +188,13 @@ If FORCE is not nil, do enlarge even `smartwin-window-status' is 2."
     (let ((height-before (window-height window))
           (window-start (window-start))
           (window-end (window-end)))
-      (if (< (window-height window) smartwin-max-window-height)
-          (fit-window-to-buffer window
-                                smartwin-max-window-height
-                                (smartwin--min-window-height window)))
+      (when (< (window-height window) smartwin-max-window-height)
+        (setq window-size-fixed nil)
+        (if (window-resizable (selected-window)
+                              (- smartwin-max-window-height height-before))
+            (window-resize (selected-window)
+                           (- smartwin-max-window-height height-before)))
+        (setq window-size-fixed t))
       ;; set smart window start
       (if (> (window-height window) height-before)
           (let ((forward-line-num (- height-before (window-height window)))
@@ -325,18 +328,6 @@ If succeed, a smart window is returned, else return nil."
         ad-do-it)
     (message "Attempt to move smart window")))
 
-(defadvice balance-windows (around smartwin-around-balance-windows)
-  "When do `balance-windows', ignore smart window."
-  (let ((smart-window (smartwin--get-smart-window))
-        (window-or-frame (ad-get-arg 0)))
-    (if (and smart-window
-             (or (not (windowp window-or-frame))
-                 ;; the only two ancestor windows of smart window
-                 (eq window-or-frame (frame-root-window))
-                 (eq window-or-frame (window-parent smart-window))))
-        (ad-set-arg 0 (window-prev-sibling smart-window)))
-    ad-do-it))
-
 (defadvice gdb (before smartwin-before-gdb)
   "When run `gdb', hide smart window."
   (smartwin-hide))
@@ -354,7 +345,8 @@ BUFFER-OR-NAME is a buffer to display, _ALIST is not used."
   (let ((buffer (window-normalize-buffer-to-switch-to buffer-or-name))
         (smart-win (smartwin--get-or-create-smart-window)))
     (with-selected-window smart-win
-      (set-window-buffer smart-win buffer))
+      (set-window-buffer smart-win buffer)
+      (smartwin--enlarge-window smart-win))
     smart-win))
 
 (defun smartwin-hide ()
@@ -438,24 +430,18 @@ According to `major-mode' that yasnippet is not enabled and the
   (interactive)
   (cond ((eq major-mode 'eshell-mode)
          (let ((eshell-buffer-maximum-lines 0))
-           (eshell-truncate-buffer)
-           (fit-window-to-buffer (selected-window)
-                                 smartwin-max-window-height
-                                 (smartwin--min-window-height (selected-window)))))
+           (eshell-truncate-buffer)))
         ((derived-mode-p 'comint-mode)
          (let ((comint-buffer-maximum-size 0))
-           (comint-truncate-buffer)
-           (fit-window-to-buffer (selected-window)
-                                 smartwin-max-window-height
-                                 (smartwin--min-window-height (selected-window)))))
+           (comint-truncate-buffer)))
         (t (command-execute (smartwin--get-C-l-command)))))
 
-(defun smartwin-enlarge ()
-  "Try to enlarge current window if it is a smart window."
-  (interactive)
-  (let ((smart-win (smartwin--get-smart-window)))
-    (if smart-win
-        (smartwin--enlarge-window smart-win))))
+;; (defun smartwin-enlarge ()
+;;   "Try to enlarge current window if it is a smart window."
+;;   (interactive)
+;;   (let ((smart-win (smartwin--get-smart-window)))
+;;     (if smart-win
+;;         (smartwin--enlarge-window smart-win))))
 
 (defun smartwin-clear-scratch-buffer (&optional buffer-or-name)
   "Clear the scratch buffer and keep the scratch message.
@@ -506,16 +492,12 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
                 smartwin--display-buffer-action)))
     (if smartwin-mode
         (progn
-          ;; backup scroll-conservatively to restore it when quit smartwin-mode
-          (setq smartwin-scroll-conservatively-backup scroll-conservatively)
-          (setq scroll-conservatively (- most-positive-fixnum 1))
           (push pair display-buffer-alist)
 
           (ad-activate #'evil-window-move-very-top)
           (ad-activate #'evil-window-move-far-left)
           (ad-activate #'evil-window-move-far-right)
           (ad-activate #'evil-window-move-very-bottom)
-          (ad-activate #'balance-windows)
           (ad-activate #'gdb)
 
           (add-hook 'buffer-list-update-hook #'smartwin--auto-enlarge-shrink-hook)
@@ -530,10 +512,6 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
                    (not (eq (get-buffer "*scratch*") smartwin-previous-buffer)))
               (smartwin-show)))
 
-      ;; restore scroll-conservatively when it equal to smartwin's setting
-      (if (eq scroll-conservatively (- most-positive-fixnum 1))
-          (setq scroll-conservatively smartwin-scroll-conservatively-backup))
-
       (remove-hook 'comint-mode-hook #'smartwin--kill-buffer-when-shell-exit)
       (remove-hook 'kill-emacs-hook #'smartwin-hide)
       (remove-hook 'buffer-list-update-hook #'smartwin--auto-enlarge-shrink-hook)
@@ -545,7 +523,6 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
       (ad-deactivate #'evil-window-move-far-left)
       (ad-deactivate #'evil-window-move-far-right)
       (ad-deactivate #'evil-window-move-very-bottom)
-      (ad-deactivate #'balance-windows)
       (ad-deactivate #'gdb)
 
       (smartwin-hide))))
@@ -562,7 +539,9 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
               (when (not (eq smartwin-previous-buffer (window-buffer window)))
                 (set-window-buffer window smartwin-previous-buffer))))
         (if (called-interactively-p 'interactive)
-            (select-window window)))
+            (progn
+              (select-window window)
+              (smartwin--enlarge-window window))))
     (message "Smartwin-mode is not enabled, do nothing")))
 
 
