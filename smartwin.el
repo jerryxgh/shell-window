@@ -23,7 +23,7 @@
 ;; This minor mode let shell like buffers share a window, called smart window,
 ;; the smart window is always at the bottom of Emacs window.  Besides that, when
 ;; point move into or out the smart window, it will be enlarged or shrinked
-;; automaticly.
+;; automaticly.  Warning: this package can not work with popwin.el.
 ;;
 ;; To use smartwin, place this file to load path and add this to .emacs:
 ;;
@@ -41,10 +41,10 @@
 ;;; Change Log:
 
 ;;; TODO:
-;; 1. Use new addvice functions to do advice.
+;; 1. Replace advices to others means
 
 ;;; BUGS:
-;; 1. can not work with guide-key
+;; 1. can not work with popwin or packages using popwin like guide-key
 
 ;;; Code:
 
@@ -69,46 +69,21 @@
 
 (defvar smartwin-window-status 0 "0: hidden, 1: shrinked, 2: enlarged.")
 
-(defvar smartwin-max-window-height (+ 2 (/ (frame-height) 2))
+(defvar smartwin-max-window-height (/ (frame-height) 3)
   "Maximum hight of smart window.
 But smart window can be higher if run `delete-other-window' when is is already
   to this height.")
 
+(defvar smartwin-min-window-height (+ 1 window-min-height)
+  "Minimum hight of smart window.")
+
 (defcustom smartwin-buffers
   '(;; Emacs
-    "*Miniedit Help*"
-    completion-list-mode
-    compilation-mode
-    grep-mode
-    occur-mode
     "*scratch*"
-    "*evil-registers*"
-    "*ielm*"
-    "*Inferior Octave*"
-    ("^\\*sbt\\*.*" :regexp t)
-    "*ensime-db-backtrace-buffer*"
     ;; shell and eshell buffers
     ("^\\*e?shell\\*\\(<.*>\\)?$" :regexp t)
-    "*Pp Macroexpand Output*"
-    "*Shell Command Output*"
-    ;; VC
-    "*vc-diff*"
-    "*vc-change-log*"
-    ;; Undo-Tree
-    " *undo-tree*"
-    ;; geiser
-    " Chicken REPL *"
-    ;; Anything
-    ("^\\*anything.*\\*$" :regexp t)
-    ;; SLIME
-    "*slime-apropos*"
-    "*slime-macroexpansion*"
-    "*slime-description*"
-    "*slime-compilation*"
-    "*slime-xref*"
-    sldb-mode
-    slime-repl-mode
-    slime-connection-list-mode)
+    compilation-mode
+    )
   "Configuration of buffers to be shown in smart window."
   :type '(repeat
           (cons :tag "Config"
@@ -164,57 +139,57 @@ if BUFFER is nil, use `current-buffer'."
                ;; (quit-window t (get-buffer-window (process-buffer process)))
                ))))))
 
-(defun smartwin--min-window-height (window)
-  "Minimal hight of WINDOW."
-  (- (window-height window)
-     (window-min-delta window nil nil nil nil nil)))
-
 (defun smartwin--shrink-window (window &optional force)
   "Try to shrink smart WINDOW if `smartwin-window-status' is not 1.
 If FORCE is not nil, do shrink even `smartwin-window-status' is 1."
   (when (or force (not (eq 1 smartwin-window-status)))
     (setq smartwin-window-status 1)
-    (with-current-buffer (window-buffer window)
-      (setq window-size-fixed nil)
-      (if (> (window-height window) (smartwin--min-window-height window))
-        (minimize-window window))
-      (setq window-size-fixed t))))
+    (with-selected-window window
+      (let ((size-fixed window-size-fixed))
+       (setq window-size-fixed nil)
+       (if (> (window-height window) smartwin-min-window-height)
+           (minimize-window window))
+       (setq window-size-fixed size-fixed)))))
 
-(defun smartwin--enlarge-window (window &optional force)
+(defun smartwin--enlarge-window (window &optional max-p)
   "Try to enlarge smart WINDOW if `smartwin-window-status' is not 2.
-If FORCE is not nil, do enlarge even `smartwin-window-status' is 2."
-  (when (or force (not (eq 2 smartwin-window-status)))
+If MAX-P is not nil, try to maximize WINDOW."
+  (when (or max-p (not (eq 2 smartwin-window-status)))
     (setq smartwin-window-status 2)
-    (let ((height-before (window-height window))
-          (window-start (window-start))
-          (window-end (window-end)))
-      (when (< (window-height window) smartwin-max-window-height)
-        (setq window-size-fixed nil)
-        (if (window-resizable (selected-window)
-                              (- smartwin-max-window-height height-before))
-            (window-resize (selected-window)
-                           (- smartwin-max-window-height height-before)))
-        (setq window-size-fixed t))
-      ;; set smart window start
-      (if (> (window-height window) height-before)
-          (let ((forward-line-num (- height-before (window-height window)))
-                left-to-forward)
-            (set-window-start
-             window
-             (let (return done)
-               (while (not done)
-                 (save-excursion
-                   (goto-char window-start)
-                   (setq left-to-forward (forward-line forward-line-num))
-                   (setq return (window-point window))
-                   (if (or (eq window-end (window-end))
-                           left-to-forward
-                           (>= forward-line-num 0))
-                       (setq done t)
-                     (setq forward-line-num (+ forward-line-num 1)))
-                   ))
-               return)
-             t))))))
+    (with-selected-window window
+        (let ((height-before (window-height window))
+              (window-start (window-start))
+              (window-end (window-end))
+              (size-fixed window-size-fixed)
+              max-delta)
+          (when (or max-p (< (window-height window) smartwin-max-window-height))
+            (setq window-size-fixed nil)
+            (setq max-delta (if max-p (window-max-delta window)
+                              (- smartwin-max-window-height height-before)))
+            (message "max-delta: %s" max-delta)
+            (if (window-resizable (selected-window) max-delta)
+                (window-resize (selected-window) max-delta))
+            (setq window-size-fixed size-fixed))
+          ;; set smart window start
+          (if (> (window-height window) height-before)
+              (let ((forward-line-num (- height-before (window-height window)))
+                    left-to-forward)
+                (set-window-start
+                 window
+                 (let (return done)
+                   (while (not done)
+                     (save-excursion
+                       (goto-char window-start)
+                       (setq left-to-forward (forward-line forward-line-num))
+                       (setq return (window-point window))
+                       (if (or (eq window-end (window-end))
+                               left-to-forward
+                               (>= forward-line-num 0))
+                           (setq done t)
+                         (setq forward-line-num (+ forward-line-num 1)))
+                       ))
+                   return)
+                 t)))))))
 
 (defun smartwin--get-bottom-window ()
   "Try to get bottom window.
@@ -223,7 +198,7 @@ it's width is equal to frame width."
   (let ((root-tree (car (window-tree (selected-frame)))))
     (if (and (listp root-tree) (car root-tree))
         (let ((bottom-window (car (last root-tree))))
-          (if (windowp bottom-window)
+          (if (and (> (length (window-list)) 1) (windowp bottom-window))
               bottom-window
             nil)))))
 
@@ -246,8 +221,8 @@ If found, return the window, else return nil."
   "Try to get an existing befitting bottom window as smart window."
   (let ((bottom-window (smartwin--get-bottom-window)))
     (if (and (windowp bottom-window)
-             (<= (window-height bottom-window) (smartwin--min-window-height
-                                                bottom-window)))
+             (<= (window-height bottom-window)
+                 smartwin-min-window-height))
               bottom-window
             nil)))
 
@@ -258,7 +233,21 @@ If found, return the window, else return nil."
     (if (frame-parameter nil 'unsplittable)
         nil
       (with-demoted-errors "Warning: %S"
-        (split-window root-win (- root-height window-min-height) 'below)))))
+        (split-window root-win (- root-height smartwin-min-window-height)
+                      'below)))))
+
+(defun smartwin--set-window-buffer (window buffer)
+  "Set WINDOW's buffer to BUFFER."
+  (let ((old-buffer (window-buffer window)))
+    (unless (eq old-buffer buffer)
+      ;; set old buffer window-size-fixed to nil
+      (with-current-buffer old-buffer
+          (setq window-size-fixed nil))
+      (with-current-buffer buffer
+          (setq window-size-fixed t))
+      (set-window-dedicated-p window nil)
+      (set-window-buffer window buffer)
+      (set-window-dedicated-p window t))))
 
 (defun smartwin--get-or-create-smart-window ()
   "Get or create the smart window.
@@ -269,8 +258,8 @@ If succeed, a smart window is returned, else return nil."
       (setq window (or (smartwin--get-befitting-window)
                        (smartwin--create-befitting-window)))
       (when window
-        (set-window-buffer window (or (get-buffer "*scratch*")
-                                      (smartwin-create-scratch-buffer)))
+        (smartwin--set-window-buffer window (or (get-buffer "*scratch*")
+                                                (smartwin-create-scratch-buffer)))
         (set-window-prev-buffers window nil))
       window)))
 
@@ -332,6 +321,54 @@ If succeed, a smart window is returned, else return nil."
   "When run `gdb', hide smart window."
   (smartwin-hide))
 
+(defadvice switch-to-buffer (around smartwin-around-switch-to-buffer)
+  "When a bffer should be shown in smart window, show it in smart window."
+  (let ((buffer-or-name (ad-get-arg 0)))
+    (if (smartwin--match-buffer buffer-or-name)
+        (let ((window (smartwin--get-or-create-smart-window)))
+          (smartwin--set-window-buffer window buffer-or-name)
+          (select-window window))
+      ad-do-it)))
+
+(defadvice switch-to-buffer-other-window
+    (around smartwin-around-switch-to-buffer-other-window)
+  "When a bffer should be show in smart window, chage window to smart window."
+  (let ((buffer-or-name (ad-get-arg 0)))
+    (if (smartwin--match-buffer buffer-or-name)
+        (let ((window (smartwin--get-or-create-smart-window)))
+          (smartwin--set-window-buffer window buffer-or-name)
+          (select-window window))
+      ad-do-it)))
+
+(defadvice delete-other-windows (around smartwin-around-delete-other-windows)
+  "If in smart window, just enlarge it instead of `delete-other-windows'."
+  (let ((window (ad-get-arg 0)))
+    (if (not window)
+        (setq window (selected-window)))
+    (if (smartwin--smart-window-p window)
+        (progn
+          (message "enlarge window")
+          (smartwin--enlarge-window window t))
+      (if (or (not (smartwin--get-smart-window)) (eq 2 (length (window-list))))
+          ad-do-it
+        (smartwin-hide)
+        ad-do-it
+        (smartwin-show)))))
+
+(defadvice delete-window (around smartwin-around-delete-window)
+  "If the window is last oridnary window(not smart window), do not kill it."
+  (let ((window (ad-get-arg 0)))
+    (if (not window) (setq window (selected-window)))
+    (if (smartwin--smart-window-p window)
+        (progn
+          (setq smartwin-previous-buffer (window-buffer window))
+          ad-do-it)
+      (if (and (smartwin--get-smart-window) (eq 2 (length (window-list))))
+          (progn
+            (message "Attempt to delete last normal(non smart) window")
+            (setq ad-return-value nil))
+        ad-do-it))))
+
 ;;; Minor Mode
 
 (defun smartwin--display-buffer-condition (buffer-or-name _action)
@@ -343,11 +380,10 @@ BUFFER-OR-NAME is a buffer name to match, _ACTION is not used."
   "Part of pair in `display-buffer-alist'.
 BUFFER-OR-NAME is a buffer to display, _ALIST is not used."
   (let ((buffer (window-normalize-buffer-to-switch-to buffer-or-name))
-        (smart-win (smartwin--get-or-create-smart-window)))
-    (with-selected-window smart-win
-      (set-window-buffer smart-win buffer)
-      (smartwin--enlarge-window smart-win))
-    smart-win))
+        (window (smartwin--get-or-create-smart-window)))
+    (with-selected-window window
+      (smartwin--set-window-buffer window buffer))
+    window))
 
 (defun smartwin-hide ()
   "Hide smart window, store its buffer as previous buffer."
@@ -356,19 +392,18 @@ BUFFER-OR-NAME is a buffer to display, _ALIST is not used."
   (let ((window (smartwin--get-smart-window)))
     (when window
       (setq smartwin-previous-buffer (window-buffer window))
+      (setq window-size-fixed nil)
       (delete-window window))))
 
 (defun smartwin--make-smart-buffer-list ()
   "Return smart buffer list that not shown in smartwin."
-  (let ((visible-buffers (ido-get-buffers-in-frames 'current)))
-    (delq nil
-          (mapcar
-           (lambda (x)
-             (let ((name (buffer-name x)))
-               (if (and (smartwin--match-buffer x)
-                        (not (member name visible-buffers)))
-                   name)))
-           (buffer-list)))))
+  (delq nil
+        (mapcar
+         (lambda (x)
+           (let ((name (buffer-name x)))
+             (if (smartwin--match-buffer x)
+                 name)))
+         (buffer-list))))
 
 (defun smartwin--make-normal-buffer-list ()
   "Return list of normal buffers that not shown."
@@ -394,14 +429,9 @@ This function get input by ido."
                       (not (string= chosen ""))
                       (get-buffer chosen))))
     (if (not buffer)
-        (if (not smartwin-buffers)
-            (progn
-              (message
-               "Then only one smartwin buffer has been shown, no other buffers")
-              (select-window (smartwin--get-or-create-smart-window)))
-          (message (format "Buffer %s not exist" chosen)))
+        (message (format "Buffer %s not exist" chosen))
       (let ((window (smartwin--get-or-create-smart-window)))
-        (set-window-buffer window buffer)
+        (smartwin--set-window-buffer window buffer)
         (select-window window)))))
 
 (defun smartwin-create-scratch-buffer ()
@@ -436,13 +466,6 @@ According to `major-mode' that yasnippet is not enabled and the
            (comint-truncate-buffer)))
         (t (command-execute (smartwin--get-C-l-command)))))
 
-;; (defun smartwin-enlarge ()
-;;   "Try to enlarge current window if it is a smart window."
-;;   (interactive)
-;;   (let ((smart-win (smartwin--get-smart-window)))
-;;     (if smart-win
-;;         (smartwin--enlarge-window smart-win))))
-
 (defun smartwin-clear-scratch-buffer (&optional buffer-or-name)
   "Clear the scratch buffer and keep the scratch message.
 If BUFFER-OR-NAME is not nil, treat is as scratch buffer."
@@ -459,11 +482,11 @@ If BUFFER-OR-NAME is not nil, treat is as scratch buffer."
 
 (defun smartwin--auto-enlarge-shrink-hook ()
   "Automatically enlarge or shrink smart window when do `select-window'."
-  (let ((smart-win (smartwin--get-smart-window)))
-    (when smart-win
-      (if (eq (selected-window) smart-win)
-          (smartwin--enlarge-window smart-win)
-        (smartwin--shrink-window smart-win)))))
+  (let ((window (smartwin--get-smart-window)))
+    (when window
+      (if (eq (selected-window) window)
+          (smartwin--enlarge-window window)
+        (smartwin--shrink-window window)))))
 
 (defun smartwin--protect-scratch-buffer ()
   "Make *scratch* buffer unkillable."
@@ -499,6 +522,10 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
           (ad-activate #'evil-window-move-far-right)
           (ad-activate #'evil-window-move-very-bottom)
           (ad-activate #'gdb)
+          (ad-activate #'switch-to-buffer)
+          (ad-activate #'switch-to-buffer-other-window)
+          (ad-activate #'delete-window)
+          (ad-activate #'delete-other-windows)
 
           (add-hook 'buffer-list-update-hook #'smartwin--auto-enlarge-shrink-hook)
           (add-hook 'comint-mode-hook #'smartwin--kill-buffer-when-shell-exit)
@@ -524,6 +551,10 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
       (ad-deactivate #'evil-window-move-far-right)
       (ad-deactivate #'evil-window-move-very-bottom)
       (ad-deactivate #'gdb)
+      (ad-deactivate #'switch-to-buffer)
+      (ad-deactivate #'switch-to-buffer-other-window)
+      (ad-deactivate #'delete-window)
+      (ad-deactivate #'delete-other-windows)
 
       (smartwin-hide))))
 
@@ -537,13 +568,12 @@ Smartwin is a window for showing shell like buffers, temp buffers and etc."
           (if (and smartwin-previous-buffer
                    (buffer-live-p smartwin-previous-buffer))
               (when (not (eq smartwin-previous-buffer (window-buffer window)))
-                (set-window-buffer window smartwin-previous-buffer))))
+                (smartwin--set-window-buffer window smartwin-previous-buffer))))
         (if (called-interactively-p 'interactive)
             (progn
               (select-window window)
               (smartwin--enlarge-window window))))
     (message "Smartwin-mode is not enabled, do nothing")))
-
 
 (provide 'smartwin)
 
