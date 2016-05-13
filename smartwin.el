@@ -338,15 +338,24 @@ If succeed, a smart window is returned, else return nil."
 
 (defadvice delete-other-windows (around smartwin-around-delete-other-windows)
   "If in smart window, just enlarge it instead of `delete-other-windows'."
-  (let ((window (ad-get-arg 0)))
-    (if (not window)
-        (setq window (selected-window)))
-    (if (smartwin--smart-window-p window) (smartwin--enlarge-window window t)
-      (if (or (not (smartwin--get-smart-window)) (eq 2 (length (window-list))))
-          ad-do-it
-        (smartwin-hide)
-        ad-do-it
-        (smartwin-show)))))
+  (let ((win-to-del (or (ad-get-arg 0) (selected-window)))
+        (smart-window (smartwin--get-smart-window)))
+    (if (eq win-to-del smart-window)
+        ;; just enlarge smart window, do not leave it as only window
+        (smartwin--enlarge-window smart-window t)
+      (if smart-window
+          ;; try to keep smart window if number of windows is larger than 2
+          (if (= (length (window-list)) 2) ;; need to delete smart window
+              (progn
+                (setq smartwin-previous-buffer (window-buffer smart-window))
+                (with-current-buffer smartwin-previous-buffer
+                  (setq window-size-fixed nil))
+                ad-do-it)
+            ;; not delete smart window
+            (smartwin-hide)
+            ad-do-it
+            (smartwin-show))
+        ad-do-it))))
 
 (defadvice delete-window (around smartwin-around-delete-window)
   "If the window is last oridnary window(not smart window), do not kill it."
@@ -355,6 +364,8 @@ If succeed, a smart window is returned, else return nil."
     (if (smartwin--smart-window-p window)
         (progn
           (setq smartwin-previous-buffer (window-buffer window))
+          (with-current-buffer smartwin-previous-buffer
+            (setq window-size-fixed nil))
           ad-do-it)
       (if (and (smartwin--get-smart-window) (eq 2 (length (window-list))))
           (progn
@@ -384,7 +395,8 @@ BUFFER-OR-NAME is a buffer to display, _ALIST is not used."
   (let ((window (smartwin--get-smart-window)))
     (when window
       (setq smartwin-previous-buffer (window-buffer window))
-      (setq window-size-fixed nil)
+      (with-current-buffer smartwin-previous-buffer
+        (setq window-size-fixed nil))
       (delete-window window))))
 
 (defun smartwin--make-smart-buffer-list ()
